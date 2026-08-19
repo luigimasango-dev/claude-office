@@ -1,0 +1,91 @@
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+  background: var(--tg-theme-bg-color, #0e0f1a);
+  color: var(--tg-theme-text-color, #e8e8f0);
+  font-family: 'Courier New', ui-monospace, monospace;
+  touch-action: manipulation;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+#game {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+  image-rendering: pixelated;
+  image-rendering: crisp-edges;
+}
+
+#hud {
+  position: fixed;
+  top: env(safe-area-inset-top, 0);
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 10px 14px 6px;
+  pointer-events: none;
+  z-index: 5;
+  text-shadow: 0 2px 4px rgba(0,0,0,.6);
+}
+
+#hud-title {
+  font-weight: bold;
+  font-size: 15px;
+  letter-spacing: 2px;
+  color: #ffd76a;
+}
+
+#hud-stats { font-size: 12px; opacity: .9; }
+#stat-working { color: #7dff9a; }
+#stat-chilling { color: #8ecbff; }
+/* OpenCode contractors — teal, to match their hard hats on the floor */
+#stat-opencode {
+  color: #0e0f1a;
+  background: #3fb8c4;
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 11px;
+  font-weight: bold;
+}
+
+#hud-conn {
+  margin-left: auto;
+  font-size: 10px;
+  opacity: .55;
+}
+#hud-conn.live { color: #7dff9a; opacity: .9; }
+#hud-conn.dead { color: #ff7d7d; opacity: .9; }
+
+#panel {
+  position: fixed;
+  left: 12px;
+  right: 12px;
+  bottom: calc(14px + env(safe-area-inset-bottom, 0px));
+  background: rgba(16, 18, 34, .96);
+  border: 2px solid #3a3f66;
+  border-radius: 10px;
+  padding: 14px 16px;
+  z-index: 10;
+  box-shadow: 0 8px 30px rgba(0,0,0,.5);
+}
+#panel.hidden { display: none; }
+#panel-name { font-size: 16px; font-weight: bold; color: #ffd76a; margin-bottom: 2px; }
+#panel-type { font-size: 11px; text-transform: uppercase; letter-spacing: 1px; opacity: .7; margin-bottom: 8px; }
+/* pre-line: the live-activity line is appended after a \n */
+#panel-desc { font-size: 13px; line-height: 1.45; margin-bottom: 8px; white-space: pre-line; }
+#panel-meta { font-size: 11px; opacity: .6; margin-bottom: 10px; }
+#panel-close {
+  font-family: inherit;
+  font-size: 12px;
+  background: #2b2f52;
+  color: #e8e8f0;
+  border: 1px solid #4a4f7a;
+  border-radius: 6px;
+  padding: 6px 14px;
+  cursor: pointer;
+}

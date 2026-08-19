@@ -1,0 +1,4 @@
+.env
+cloudflared.exe
+node_modules/
+*.log

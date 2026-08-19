@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>Claude HQ</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="hud">
+  <div id="hud-title">🏢 CLAUDE&nbsp;HQ</div>
+  <div id="hud-stats"><span id="stat-working">0 working</span> · <span id="stat-chilling">0 chilling</span> <span id="stat-opencode" style="display:none"></span></div>
+  <div id="hud-conn">connecting…</div>
+</div>
+<canvas id="game"></canvas>
+<div id="panel" class="hidden">
+  <div id="panel-name"></div>
+  <div id="panel-type"></div>
+  <div id="panel-desc"></div>
+  <div id="panel-meta"></div>
+  <button id="panel-close">close</button>
+</div>
+<script src="app.js"></script>
+</body>
+</html>

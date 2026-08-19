@@ -1,0 +1,13 @@
+{
+  "name": "claude-office",
+  "version": "1.0.0",
+  "description": "Claude HQ — a live pixel office showing Claude Code agents and OpenCode jobs working and chilling, as a desktop dashboard or a Telegram Mini App",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "set NO_TUNNEL=1&& node server.js",
+    "dash": "set NO_TUNNEL=1&& set OPEN_BROWSER=1&& node server.js",
+    "deputy": "node deputy.js"
+  },
+  "engines": { "node": ">=18" }
+}

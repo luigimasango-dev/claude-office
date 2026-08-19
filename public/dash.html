@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Claude HQ — Control Room</title>
+<link rel="stylesheet" href="dash.css">
+</head>
+<body>
+
+<header id="bar">
+  <div id="bar-brand">
+    <span id="bar-title">CLAUDE&nbsp;HQ</span>
+    <span id="bar-sub">control room</span>
+  </div>
+
+  <div id="tiles">
+    <div class="tile" data-k="working"><span class="tile-n" id="tile-working">0</span><span class="tile-l">working</span></div>
+    <div class="tile" data-k="chilling"><span class="tile-n" id="tile-chilling">0</span><span class="tile-l">chilling</span></div>
+    <div class="tile" data-k="oc"><span class="tile-n" id="tile-oc">0</span><span class="tile-l">opencode</span></div>
+    <div class="tile" data-k="ctx"><span class="tile-n" id="tile-ctx">—</span><span class="tile-l">context</span></div>
+  </div>
+
+  <div id="hud-conn">connecting…</div>
+</header>
+
+<main id="grid">
+
+  <section class="pane" id="pane-office">
+    <div class="pane-head">
+      <h2>the floor</h2>
+      <!-- app.js writes these; kept so one renderer drives both shells -->
+      <div class="pane-note">
+        <span id="stat-working"></span> · <span id="stat-chilling"></span>
+        <span id="stat-opencode" style="display:none"></span>
+      </div>
+    </div>
+    <div id="stage"><canvas id="game"></canvas></div>
+  </section>
+
+  <section class="pane" id="pane-roster">
+    <div class="pane-head">
+      <h2>who's on</h2>
+      <div class="pane-note" id="roster-count">—</div>
+    </div>
+    <div id="roster" class="scroll"></div>
+  </section>
+
+  <section class="pane" id="pane-feed">
+    <div class="pane-head">
+      <h2>activity</h2>
+      <div class="pane-note" id="feed-note">live tool calls</div>
+    </div>
+    <div id="feed" class="scroll"></div>
+  </section>
+
+  <section class="pane" id="pane-say">
+    <div class="pane-head">
+      <h2>hire a contractor</h2>
+      <div class="pane-note" id="say-status">idle</div>
+    </div>
+    <div id="say-body">
+      <div id="say-row">
+        <input id="say-cwd" type="text" spellcheck="false"
+               placeholder="working directory (blank = ULC)" title="Must be inside ULC, C:\Trading, C:\Dev, projects or Temp">
+        <button id="say-all" class="chipbtn" title="Send this brief to every agent">select all</button>
+        <button id="say-none" class="chipbtn" title="Clear selection — runs on the default agent">clear</button>
+      </div>
+      <div id="say-agents" title="Click to pick one agent, or several — several are queued and released two at a time"></div>
+      <textarea id="say-brief" rows="3" spellcheck="false"
+        placeholder="Say what you want done. The how lives in the agent — just describe the what."></textarea>
+      <div id="say-actions">
+        <button id="say-mic" title="Hold a thought — click, speak, click again">🎙 speak</button>
+        <button id="say-go">dispatch</button>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<div id="panel" class="hidden">
+  <div id="panel-name"></div>
+  <div id="panel-type"></div>
+  <div id="panel-desc"></div>
+  <div id="panel-meta"></div>
+  <button id="panel-close">close</button>
+</div>
+
+<script src="app.js"></script>
+<script src="dash.js"></script>
+</body>
+</html>
