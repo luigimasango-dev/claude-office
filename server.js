@@ -1,8 +1,12 @@
 // Claude HQ — live office dashboard server
-// Zero-dependency Node server: scans ~/.claude/projects for live session +
-// subagent activity, serves the Mini App frontend, streams state via SSE,
+// Zero-dependency Node server: scans ~/.claude/projects for live Claude
+// session + subagent activity and ~/.local/share/opencode/opencode.db for live
+// OpenCode sessions, serves the Mini App frontend, streams state via SSE,
 // spawns a Cloudflare quick tunnel and points the Telegram bot's menu
 // button at it.
+//
+// Zero-dependency means zero npm packages: node:sqlite (used for the OpenCode
+// scan) ships inside Node itself (22.5+; CI runs 24).
 
 const http = require('http');
 const fs = require('fs');
@@ -13,6 +17,10 @@ const { spawn } = require('child_process');
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8737;
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
 const OPENCODE_JOBS_DIR = path.join(os.homedir(), '.opencode-bridge', 'jobs');
+// Dispatch/queue bookkeeping still lives here (created on demand when a job is
+// hired from the dashboard), but the contractor SCAN no longer reads it.
+const OPENCODE_DB = process.env.OPENCODE_DB ||
+  path.join(os.homedir(), '.local', 'share', 'opencode', 'opencode.db');
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
 // Activity thresholds (ms since last file write)
@@ -152,6 +160,8 @@ function parseClaudeActivity(text) {
 }
 
 // An OpenCode job's stdout.log: last tool call, latest context size, last text.
+// RETIRED with the bridge on 2026-09-12 (issue #2 now reads opencode.db, which
+// has no transcript files) — kept for the format documentation, no live caller.
 function parseOpencodeActivity(text, st) {
   const out = { tool: null, detail: null, ctxTokens: 0, say: null, logKB: Math.round(st.size / 1024) };
   const lines = text.split('\n');
@@ -182,79 +192,77 @@ function pidAlive(pid) {
 }
 
 // ---------------------------------------------------------------------------
-// Scanner: ~/.opencode-bridge/jobs -> OpenCode contractors on the floor
+// Scanner: opencode.db -> OpenCode contractors on the floor
+//
+// OpenCode v1.18+ keeps sessions in a SQLite store
+// (~/.local/share/opencode/opencode.db, table `session`). The
+// ~/.opencode-bridge/jobs dir this used to read died with the bridge on
+// 2026-08-20, so the counter sat at 0 permanently (issue #2). node:sqlite is
+// stdlib on Node 22.5+ (CI runs 24); if it or the db is missing we return no
+// contractors rather than taking the dashboard down. OPENCODE_DB overrides
+// the path (the regression test points it at a scratch db).
 // ---------------------------------------------------------------------------
+let sqliteDead = false;
 function scanOpencode(now) {
   const chars = [];
-  let dirs = [];
+  if (sqliteDead) return chars;
+  let DatabaseSync;
+  try { ({ DatabaseSync } = require('node:sqlite')); }
+  catch { sqliteDead = true; return chars; } // old Node — fine, no contractors today
+  let db;
+  try { db = new DatabaseSync(OPENCODE_DB, { readOnly: true }); }
+  catch { return chars; } // no store yet — fine, no contractors today
   try {
-    dirs = fs.readdirSync(OPENCODE_JOBS_DIR, { withFileTypes: true })
-      .filter(d => d.isDirectory()).map(d => d.name);
-  } catch { return chars; } // bridge not installed — fine, no contractors today
-
-  for (const jobId of dirs) {
-    const jobDir = path.join(OPENCODE_JOBS_DIR, jobId);
-    let meta;
-    try { meta = JSON.parse(fs.readFileSync(path.join(jobDir, 'meta.json'), 'utf8')); } catch { continue; }
-
-    const logFile = path.join(jobDir, 'stdout.log');
-    let logStat = null;
-    try { logStat = fs.statSync(logFile); } catch { /* no output yet */ }
-
-    // A job counts as running only if the bridge left it open AND its process
-    // is genuinely alive. A dead pid with no finish stamp is a crashed run, and
-    // the 4 Aug ghost-run bug is exactly why we don't trust the state field.
-    const running = !meta.finished && pidAlive(meta.pid);
-
-    let status;
-    if (running) {
-      status = 'working';
-    } else {
-      const endedAt = meta.finished ? Date.parse(meta.finished)
-        : (logStat ? logStat.mtimeMs : Date.parse(meta.started));
-      status = statusFor(now - endedAt);
-      if (status === 'working') status = 'chilling'; // finished work isn't work
+    const rows = db.prepare(
+      'SELECT id, directory, title, agent, model, time_created, time_updated FROM session WHERE time_updated > ? ORDER BY time_updated DESC LIMIT 50'
+    ).all(now - CHILLING_MS);
+    for (const s of rows) {
+      const lastActive = Number(s.time_updated) || now;
+      const status = statusFor(now - lastActive);
+      if (!status) continue; // gone home
+      const running = status === 'working';
+      let model = 'unknown';
+      if (typeof s.model === 'string' && s.model.trim()) {
+        const m = s.model.trim();
+        try { model = String(JSON.parse(m).id || m).replace(/^opencode\//, ''); }
+        catch { model = m.replace(/^opencode\//, ''); }
+      }
+      const startedMs = Number(s.time_created) || now;
+      chars.push({
+        id: s.id,
+        kind: 'opencode',
+        agentType: 'opencode',
+        name: null,                        // frontend assigns a deterministic name
+        project: s.directory ? path.basename(s.directory) : 'opencode',
+        desc: s.title || 'OpenCode session',
+        status,
+        lastActive,
+        jobId: s.id,
+        model,
+        agentName: s.agent || '',   // lets the composer aim at this contractor
+        running,
+        stalled: false, // running implies touched < 2 min ago, so never quiet
+        elapsedMs: now - startedMs,
+        activity: null,
+        ctxTokens: 0,
+        logKB: 0,
+      });
     }
-    if (!status) continue; // knocked off long ago
-
-    const act = logStat ? cachedActivity(logFile, 96 * 1024, parseOpencodeActivity) : null;
-    const startedMs = Date.parse(meta.started) || now;
-
-    // A running job whose log has gone quiet for 3 minutes is worth seeing.
-    const stalled = running && logStat ? (now - logStat.mtimeMs) > 3 * 60 * 1000 : false;
-
-    chars.push({
-      id: jobId,
-      kind: 'opencode',
-      agentType: 'opencode',
-      name: null,                        // frontend assigns a deterministic name
-      project: meta.cwd ? path.basename(meta.cwd) : 'opencode',
-      desc: meta.label || 'OpenCode job',
-      status,
-      lastActive: logStat ? logStat.mtimeMs : startedMs,
-      jobId,
-      model: (meta.model || '').replace(/^opencode\//, '') || 'unknown',
-      agentName: meta.agent || '',   // lets the composer aim at this contractor
-      running,
-      stalled,
-      elapsedMs: (meta.finished ? Date.parse(meta.finished) : now) - startedMs,
-      activity: act ? { tool: act.tool, detail: act.detail, say: act.say } : null,
-      ctxTokens: act ? act.ctxTokens : 0,
-      logKB: act ? act.logKB : 0,
-    });
-  }
+  } catch { /* unreadable store — no contractors, dashboard stays up */ }
+  try { db.close(); } catch { /* ignore */ }
   return chars;
 }
 
 function scan() {
   const now = Date.now();
   const chars = [];
+  let projectsError = null;
   let projectDirs = [];
   try {
     projectDirs = fs.readdirSync(PROJECTS_DIR, { withFileTypes: true })
       .filter(d => d.isDirectory()).map(d => d.name);
   } catch {
-    return { generatedAt: now, characters: [], error: 'projects dir not found' };
+    projectsError = 'projects dir not found'; // no Claude sessions here — contractors below still count
   }
 
   for (const proj of projectDirs) {
@@ -314,7 +322,9 @@ function scan() {
   for (const oc of scanOpencode(now)) chars.push(oc);
 
   chars.sort((a, b) => a.id.localeCompare(b.id)); // stable desk assignment
-  return { generatedAt: now, characters: chars, queued: queueDepth() };
+  const out = { generatedAt: now, characters: chars, queued: queueDepth() };
+  if (projectsError) out.error = projectsError;
+  return out;
 }
 
 // ---------------------------------------------------------------------------

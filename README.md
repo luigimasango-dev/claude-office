@@ -43,7 +43,8 @@ cat. The cat answers to no one.
 
 - `server.js` (zero npm dependencies) scans two sources every 3s:
   - `~/.claude/projects/**` — session and subagent `.jsonl` transcripts
-  - `~/.opencode-bridge/jobs/**` — OpenCode job `meta.json` + `stdout.log`
+  - `~/.local/share/opencode/opencode.db` — OpenCode `session` table
+    (via built-in `node:sqlite`; `OPENCODE_DB` overrides the path)
 - File mtimes drive status:
   - touched < 2 min ago → **working**
   - touched < 30 min ago → **chilling**
@@ -54,9 +55,10 @@ cat. The cat answers to no one.
   the moment the action changes. Labels are clipped to 120 chars
   server-side.
 - **OpenCode specifics.** Contractors carry an amber hard hat while
-  running, grey once done. A job is only "running" if the bridge left it
-  open *and* its pid is genuinely alive — a dead pid with no finish stamp
-  is a crashed run, not a working one.
+  running, grey once done. "Running" is recency-based: a session touched in
+  the last 2 minutes works, one quiet for up to 30 minutes chills. The old
+  `~/.opencode-bridge/jobs` scan (pid-liveness) died with the bridge on
+  2026-08-20 and was replaced by the `opencode.db` scan on 2026-09-12.
 - State streams to the frontend over Server-Sent Events (`/events`).
 - `public/` is the Mini App: canvas pixel office + Telegram WebApp SDK.
 - On start, the server spawns a **Cloudflare quick tunnel** (public HTTPS
@@ -100,18 +102,18 @@ pin it).
   Treat the URL as sensitive and don't share it. If you're about to work
   on something you wouldn't screenshot, run with `NO_TUNNEL=1` and use
   `http://localhost:8737`.
-- **OpenCode contractors read 0 unless a job store exists.** The scan
-  target `~/.opencode-bridge/jobs/` does not exist on this machine (the
-  bridge was removed 2026-08-20), so the scan is silently skipped and the
-  OPENCODE counter sits at 0. Tracked as an issue.
+- **Dispatch/queue bookkeeping still uses `~/.opencode-bridge/`.**
+  Jobs hired from the dashboard and the queue drainer recreate those dirs on
+  demand — that path is unaffected by the bridge removal. Only the
+  contractor *scan* moved (to `opencode.db`); the old "reads 0" limitation
+  is fixed and tested (`node test/opencode_scan.mjs`).
 - No hosted version is possible: artifact pages and cloud hosts can't read
   `localhost:8737` or local transcripts. The dashboard has to be served
   from the machine the agents run on.
-- CI is a syntax check (`node --check`) on both JS entrypoints, not a test
-  suite: the server binds a port, reads live session dirs and spawns a
-  tunnel on start, so there is nothing hermetic to assert. The honest
-  end-to-end check is opening `/dash` against real sessions, as in the
-  screenshot above.
+- CI runs `node --check` on both JS entrypoints plus the
+  `test/opencode_scan.mjs` regression test (scratch `opencode.db` pointed at
+  via `OPENCODE_DB`, no live sessions needed). The honest end-to-end check
+  remains opening `/dash` against real sessions, as in the screenshot above.
 
 ## Development
 
