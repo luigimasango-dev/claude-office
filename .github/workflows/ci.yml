@@ -11,7 +11,9 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
-      - name: Syntax check (no test suite — see README Limitations)
+      - name: Syntax check
         run: |
           node --check server.js
           node --check deputy.js
+      - name: OpenCode scan regression (scratch db, no live sessions needed)
+        run: node test/opencode_scan.mjs
