@@ -13,6 +13,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { spawn } = require('child_process');
+const { OPENCODE_EXE, createSession, runArgs } = require('./opencode-session');
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 8737;
 const PROJECTS_DIR = path.join(os.homedir(), '.claude', 'projects');
@@ -195,7 +196,8 @@ function pidAlive(pid) {
 // Scanner: opencode.db -> OpenCode contractors on the floor
 //
 // OpenCode v1.18+ keeps sessions in a SQLite store
-// (~/.local/share/opencode/opencode.db, table `session`). The
+// (~/.local/share/opencode/opencode.db, table `session`; v2.0.x writes
+// `session_v2` - see scanOpencode). The
 // ~/.opencode-bridge/jobs dir this used to read died with the bridge on
 // 2026-08-20, so the counter sat at 0 permanently (issue #2). node:sqlite is
 // stdlib on Node 22.5+ (CI runs 24); if it or the db is missing we return no
@@ -213,8 +215,14 @@ function scanOpencode(now) {
   try { db = new DatabaseSync(OPENCODE_DB, { readOnly: true }); }
   catch { return chars; } // no store yet — fine, no contractors today
   try {
+    // v2 (2026-09-27): the migration added a `session_v2` table and that is where new
+    // sessions now land. The legacy `session` table still exists and still parses, but
+    // it is FROZEN: 888 rows, newest 2026-09-26 15:00, 0 touched in the last 30 min,
+    // while session_v2 had 10. Reading `session` showed an empty office. Columns used
+    // here (id, directory, title, agent, model, time_created, time_updated) are all
+    // present in both, so this is a table-name swap only.
     const rows = db.prepare(
-      'SELECT id, directory, title, agent, model, time_created, time_updated FROM session WHERE time_updated > ? ORDER BY time_updated DESC LIMIT 50'
+      'SELECT id, directory, title, agent, model, time_created, time_updated FROM session_v2 WHERE time_updated > ? ORDER BY time_updated DESC LIMIT 50'
     ).all(now - CHILLING_MS);
     for (const s of rows) {
       const lastActive = Number(s.time_updated) || now;
@@ -512,13 +520,22 @@ function dispatch({ brief, agent, cwd, label }, cb) {
   const out = fs.openSync(path.join(jd, 'stdout.log'), 'a');
   const err = fs.openSync(path.join(jd, 'stderr.log'), 'a');
 
-  const args = ['run', '--format', 'json', '--dir', work, '--model', 'opencode/deepseek-v4-flash-free'];
-  if (agent && agent.trim()) args.push('--agent', agent.trim());
-  args.push(brief);
+  // The brief never goes inline (cmd metachars), and the working dir is pinned by
+  // creating the session with a location - see opencode-session.js.
+  let sessionId;
+  try { sessionId = createSession(work); } catch (e) {
+    fs.closeSync(out); fs.closeSync(err);
+    return cb({ error: `Could not create a session in ${work}: ${e.message}` });
+  }
+  const args = runArgs({
+    sessionId, model: 'opencode/muse-spark-1.3-contributor-free', agent: agent && agent.trim(),
+    attach: path.join(jd, 'brief.md'),
+    message: 'Carry out the brief in the attached brief.md. Report what you produced with full paths.',
+  });
 
   let child;
   try {
-    child = spawn('opencode', args, { detached: true, stdio: ['ignore', out, err], shell: true });
+    child = spawn(OPENCODE_EXE, args, { detached: true, stdio: ['ignore', out, err], shell: false });
   } catch (e) {
     return cb({ error: 'Could not spawn opencode: ' + e.message });
   }
@@ -529,8 +546,9 @@ function dispatch({ brief, agent, cwd, label }, cb) {
     label: label && label.trim() ? label.trim() : brief.trim().split('\n')[0].slice(0, 80),
     pid: child.pid,
     cwd: work,
-    model: 'opencode/deepseek-v4-flash-free',
+    model: 'opencode/muse-spark-1.3-contributor-free',
     agent: agent || '',
+    session_id: sessionId,
     command: '',
     expect_file: null,
     started: new Date().toISOString().replace('Z', '+00:00'),
@@ -591,7 +609,7 @@ const server = http.createServer((req, res) => {
 
   if (url.pathname === '/api/agents') {
     // Roster for the composer's dropdown, read from the agent definitions.
-    const dir = path.join(os.homedir(), '.config', 'opencode', 'agent');
+    const dir = path.join(os.homedir(), '.config', 'opencode', 'agents');
     let names = [];
     try {
       names = fs.readdirSync(dir)

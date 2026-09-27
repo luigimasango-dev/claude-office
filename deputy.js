@@ -28,7 +28,10 @@ const MAX_CONCURRENT = 2;
 const STALE_MIN = 12;          // no output for this long => dead
 const POLL_MS = 15000;
 const MAX_JOB_MIN = 45;        // absolute ceiling per job
-const MODEL = 'opencode/deepseek-v4-flash-free';
+const MODEL = 'opencode/muse-spark-1.3-contributor-free';
+// OpenCode v2 spawn rules (real .exe, shell:false, working dir via session.create)
+// live in one place, shared with server.js. Briefs travel via --file.
+const { OPENCODE_EXE, createSession, runArgs } = require('./opencode-session');
 
 const log = (m) => console.log(`[${new Date().toLocaleTimeString()}] ${m}`);
 
@@ -118,17 +121,26 @@ function dispatch({ meta, brief }) {
   const jobId = `oc-${stamp}-${Math.random().toString(16).slice(2, 8)}`;
   const jd = path.join(JOBS, jobId);
   fs.mkdirSync(jd, { recursive: true });
-  fs.writeFileSync(path.join(jd, 'brief.md'), brief, 'utf8');
+  const briefPath = path.join(jd, 'brief.md');
+  fs.writeFileSync(briefPath, brief, 'utf8');
 
   const out = fs.openSync(path.join(jd, 'stdout.log'), 'a');
   const err = fs.openSync(path.join(jd, 'stderr.log'), 'a');
-  const args = ['run', '--format', 'json', '--dir', cwd, '--model', MODEL];
-  if (meta.agent) args.push('--agent', meta.agent);
-  args.push(brief);
+  // The brief never goes inline (cmd metachars), and the working dir is pinned by
+  // creating the session with a location - see opencode-session.js.
+  let sessionId;
+  try { sessionId = createSession(cwd); } catch (e) {
+    fs.closeSync(out); fs.closeSync(err);
+    return { error: `could not create a session in ${cwd}: ${e.message}` };
+  }
+  const args = runArgs({
+    sessionId, model: MODEL, agent: meta.agent, attach: briefPath,
+    message: 'Carry out the brief in the attached brief.md. Report what you produced with full paths.',
+  });
 
   let child;
   try {
-    child = spawn('opencode', args, { detached: true, stdio: ['ignore', out, err], shell: true });
+    child = spawn(OPENCODE_EXE, args, { detached: true, stdio: ['ignore', out, err], shell: false });
   } catch (e) { return { error: 'spawn failed: ' + e.message }; }
   child.unref();
 
@@ -138,7 +150,7 @@ function dispatch({ meta, brief }) {
 
   fs.writeFileSync(path.join(jd, 'meta.json'), JSON.stringify({
     job_id: jobId, label: meta.label || jobId, pid: child.pid, cwd,
-    model: MODEL, agent: meta.agent || '', command: '',
+    model: MODEL, agent: meta.agent || '', session_id: sessionId, command: '',
     expect_file: expect, started: new Date().toISOString(),
     finished: null, state: 'running', dispatched_from: 'deputy',
   }, null, 2));
