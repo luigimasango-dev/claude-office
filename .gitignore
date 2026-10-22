@@ -2,3 +2,5 @@
 cloudflared.exe
 node_modules/
 *.log
+
+*.bak-*

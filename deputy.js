@@ -28,7 +28,8 @@ const MAX_CONCURRENT = 2;
 const STALE_MIN = 12;          // no output for this long => dead
 const POLL_MS = 15000;
 const MAX_JOB_MIN = 45;        // absolute ceiling per job
-const MODEL = 'opencode/muse-spark-1.3-contributor-free';
+// 2026-10-22: muse-spark left the registry; zero-retention default (OpenCode docs: no retention, no training)
+const MODEL = 'opencode/deepseek-v4.1-flash-free';
 // OpenCode v2 spawn rules (real .exe, shell:false, working dir via session.create)
 // live in one place, shared with server.js. Briefs travel via --file.
 const { OPENCODE_EXE, createSession, runArgs } = require('./opencode-session');

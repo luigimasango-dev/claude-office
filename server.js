@@ -528,7 +528,7 @@ function dispatch({ brief, agent, cwd, label }, cb) {
     return cb({ error: `Could not create a session in ${work}: ${e.message}` });
   }
   const args = runArgs({
-    sessionId, model: 'opencode/muse-spark-1.3-contributor-free', agent: agent && agent.trim(),
+    sessionId, model: 'opencode/deepseek-v4.1-flash-free', agent: agent && agent.trim(),
     attach: path.join(jd, 'brief.md'),
     message: 'Carry out the brief in the attached brief.md. Report what you produced with full paths.',
   });
@@ -546,7 +546,7 @@ function dispatch({ brief, agent, cwd, label }, cb) {
     label: label && label.trim() ? label.trim() : brief.trim().split('\n')[0].slice(0, 80),
     pid: child.pid,
     cwd: work,
-    model: 'opencode/muse-spark-1.3-contributor-free',
+    model: 'opencode/deepseek-v4.1-flash-free',
     agent: agent || '',
     session_id: sessionId,
     command: '',
